@@ -85,6 +85,7 @@ import {
   triggerRenderers as awsTriggerRenderers,
   eventStateRegistry as awsEventStateRegistry,
 } from "./aws";
+import { componentMappers as hetznerComponentMappers } from "./hetzner/index";
 import { timeGateMapper, TIME_GATE_STATE_REGISTRY } from "./timegate";
 import {
   componentMappers as discordComponentMappers,
@@ -106,6 +107,7 @@ import {
   triggerRenderers as claudeTriggerRenderers,
   eventStateRegistry as claudeEventStateRegistry,
 } from "./claude/index";
+import { triggerRenderers as bitbucketTriggerRenderers } from "./bitbucket/index";
 import {
   componentMappers as railwayComponentMappers,
   triggerRenderers as railwayTriggerRenderers,
@@ -182,6 +184,7 @@ const appMappers: Record<string, Record<string, ComponentBaseMapper>> = {
   railway: railwayComponentMappers,
   prometheus: prometheusComponentMappers,
   cursor: cursorComponentMappers,
+  hetzner: hetznerComponentMappers,
   dockerhub: dockerhubComponentMappers,
 };
 
@@ -205,6 +208,7 @@ const appTriggerRenderers: Record<string, Record<string, TriggerRenderer>> = {
   circleci: circleCITriggerRenderers,
   claude: claudeTriggerRenderers,
   railway: railwayTriggerRenderers,
+  bitbucket: bitbucketTriggerRenderers,
   prometheus: prometheusTriggerRenderers,
   cursor: cursorTriggerRenderers,
   dockerhub: dockerhubTriggerRenderers,

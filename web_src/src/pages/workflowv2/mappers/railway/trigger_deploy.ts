@@ -5,12 +5,14 @@ import {
   SubtitleContext,
   ExecutionDetailsContext,
   ExecutionInfo,
+  NodeInfo,
   StateFunction,
   EventStateRegistry,
 } from "../types";
 import RailwayLogo from "@/assets/icons/integrations/railway.svg";
 import { formatTimeAgo } from "@/utils/date";
-import { DEFAULT_EVENT_STATE_MAP, EventState, EventStateMap } from "@/ui/componentBase";
+import { DEFAULT_EVENT_STATE_MAP, EventSection, EventState, EventStateMap } from "@/ui/componentBase";
+import { getTriggerRenderer } from "..";
 
 interface TriggerDeployMetadata {
   project?: { id?: string; name?: string };
@@ -167,11 +169,83 @@ function formatDeploymentStatus(status: string | undefined): string {
 }
 
 /**
+ * Builds the subtitle string for a Railway deployment execution
+ */
+function getDeploymentSubtitle(execution: ExecutionInfo): string {
+  const execMetadata = execution.metadata as TriggerDeployExecutionMetadata;
+  const status = execMetadata?.status;
+
+  // Show current deployment status while running
+  if (execution.state === "STATE_STARTED" || execution.state === "STATE_PENDING") {
+    switch (status) {
+      case DeploymentStatus.QUEUED:
+      case DeploymentStatus.WAITING:
+        return "Queued...";
+      case DeploymentStatus.BUILDING:
+        return "Building...";
+      case DeploymentStatus.DEPLOYING:
+        return "Deploying...";
+      default:
+        return "Starting...";
+    }
+  }
+
+  // Finished states
+  if (execution.state === "STATE_FINISHED") {
+    const updatedAt = execution.updatedAt ? new Date(execution.updatedAt) : null;
+    const timeAgo = updatedAt ? formatTimeAgo(updatedAt) : "";
+
+    switch (status) {
+      case DeploymentStatus.SUCCESS:
+      case DeploymentStatus.SLEEPING:
+        // SLEEPING means deployment succeeded but app went to sleep
+        return timeAgo ? `Deployed ${timeAgo}` : "Deployed";
+      case DeploymentStatus.CRASHED:
+        return timeAgo ? `Crashed ${timeAgo}` : "Crashed";
+      case DeploymentStatus.FAILED:
+      case DeploymentStatus.REMOVED:
+      case DeploymentStatus.SKIPPED:
+        return timeAgo ? `Failed ${timeAgo}` : "Failed";
+      default:
+        // Fallback to result-based status
+        if (execution.result === "RESULT_PASSED") {
+          return timeAgo ? `Deployed ${timeAgo}` : "Deployed";
+        }
+        return timeAgo ? `Failed ${timeAgo}` : "Failed";
+    }
+  }
+
+  const createdAt = execution.createdAt ? new Date(execution.createdAt) : null;
+  return createdAt ? formatTimeAgo(createdAt) : "";
+}
+
+/**
+ * Builds event sections for a Railway TriggerDeploy execution
+ */
+function getTriggerDeployEventSections(nodes: NodeInfo[], execution: ExecutionInfo): EventSection[] {
+  const rootTriggerNode = nodes.find((n) => n.id === execution.rootEvent?.nodeId);
+  const rootTriggerRenderer = getTriggerRenderer(rootTriggerNode?.componentName!);
+  const { title } = rootTriggerRenderer.getTitleAndSubtitle({ event: execution.rootEvent! });
+  const isRunning = execution.state === "STATE_STARTED" || execution.state === "STATE_PENDING";
+
+  return [
+    {
+      showAutomaticTime: isRunning,
+      receivedAt: new Date(execution.createdAt!),
+      eventTitle: title,
+      eventSubtitle: getDeploymentSubtitle(execution),
+      eventState: triggerDeployStateFunction(execution),
+      eventId: execution.rootEvent!.id!,
+    },
+  ];
+}
+
+/**
  * Mapper for the "railway.triggerDeploy" component type
  */
 export const triggerDeployMapper: ComponentBaseMapper = {
   props(context: ComponentBaseContext) {
-    const { node, componentDefinition } = context;
+    const { node, nodes, componentDefinition, lastExecutions } = context;
     const metadata = node.metadata as unknown as TriggerDeployMetadata;
     const metadataItems = [];
 
@@ -198,56 +272,13 @@ export const triggerDeployMapper: ComponentBaseMapper = {
       title: node.name || componentDefinition.label || "Trigger Deploy",
       metadata: metadataItems,
       eventStateMap: TRIGGER_DEPLOY_STATE_MAP,
+      eventSections: lastExecutions[0] ? getTriggerDeployEventSections(nodes, lastExecutions[0]) : undefined,
+      includeEmptyState: !lastExecutions[0],
     };
   },
 
   subtitle(context: SubtitleContext): string {
-    const { execution } = context;
-    const execMetadata = execution.metadata as TriggerDeployExecutionMetadata;
-    const status = execMetadata?.status;
-
-    // Show current deployment status while running
-    if (execution.state === "STATE_STARTED" || execution.state === "STATE_PENDING") {
-      switch (status) {
-        case DeploymentStatus.QUEUED:
-        case DeploymentStatus.WAITING:
-          return "Queued...";
-        case DeploymentStatus.BUILDING:
-          return "Building...";
-        case DeploymentStatus.DEPLOYING:
-          return "Deploying...";
-        default:
-          return "Starting...";
-      }
-    }
-
-    // Finished states
-    if (execution.state === "STATE_FINISHED") {
-      const updatedAt = execution.updatedAt ? new Date(execution.updatedAt) : null;
-      const timeAgo = updatedAt ? formatTimeAgo(updatedAt) : "";
-
-      switch (status) {
-        case DeploymentStatus.SUCCESS:
-        case DeploymentStatus.SLEEPING:
-          // SLEEPING means deployment succeeded but app went to sleep
-          return timeAgo ? `Deployed ${timeAgo}` : "Deployed";
-        case DeploymentStatus.CRASHED:
-          return timeAgo ? `Crashed ${timeAgo}` : "Crashed";
-        case DeploymentStatus.FAILED:
-        case DeploymentStatus.REMOVED:
-        case DeploymentStatus.SKIPPED:
-          return timeAgo ? `Failed ${timeAgo}` : "Failed";
-        default:
-          // Fallback to result-based status
-          if (execution.result === "RESULT_PASSED") {
-            return timeAgo ? `Deployed ${timeAgo}` : "Deployed";
-          }
-          return timeAgo ? `Failed ${timeAgo}` : "Failed";
-      }
-    }
-
-    const createdAt = execution.createdAt ? new Date(execution.createdAt) : null;
-    return createdAt ? formatTimeAgo(createdAt) : "";
+    return getDeploymentSubtitle(context.execution);
   },
 
   getExecutionDetails(context: ExecutionDetailsContext) {
